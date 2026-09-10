@@ -165,7 +165,7 @@ const data = {
       items:[]
     },{
       title: "Data Ruangan & Kelas",
-      url: "#",
+      url: "/dashboard/classroom",
       icon: (
         <BlocksIcon/>
       ),

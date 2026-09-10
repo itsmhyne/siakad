@@ -1,28 +1,6 @@
 import DataTable from "@/components/dashboard/DataTable";
-
-// Fungsi Fetch Server-Side
-// Fetch Siswa (Ditambah parameter classId)
-async function getStudents(page: string, search: string, sortBy: string, sortDir: string, classId: string) {
-  try {
-    const url = `http://127.0.0.1:8000/api/students?page=${page}&search=${search}&sort_by=${sortBy}&sort_dir=${sortDir}&class_id=${classId}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Gagal');
-    return await res.json();
-  } catch (error) {
-    return null;
-  }
-}
-
-// Fetch Daftar Kelas untuk Dropdown
-async function getClasses() {
-  try {
-    const res = await fetch('http://127.0.0.1:8000/api/classes', { cache: 'no-store' });
-    if (!res.ok) throw new Error('Gagal');
-    return await res.json();
-  } catch (error) {
-    return [];
-  }
-}
+import { ClassRoomService } from "@/services/classRoom";
+import { StudentService } from "@/services/studentServices";
 
 export default async function StudentsPage({
   searchParams,
@@ -31,18 +9,24 @@ export default async function StudentsPage({
 }) {
   const resolvedParams = await searchParams;
 
-  const currentPage = resolvedParams.page || '1';
+  const currentPage = Number(resolvedParams.page) || 1;
   const currentSearch = resolvedParams.search || '';
   const currentSortBy = resolvedParams.sort_by || 'name';
   const currentSortDir = resolvedParams.sort_dir || 'asc';
   
-  // [BARU] Tangkap class_id dari URL
+  // Tangkap class_id dari URL
   const currentClassId = resolvedParams.class_id || '';
   
-  // Tarik kedua data secara bersamaan (Parallel Fetching agar lebih cepat)
+  // [YANG DIUBAH] Gunakan Service pattern di sini
   const [studentResponse, classesResponse] = await Promise.all([
-    getStudents(currentPage, currentSearch, currentSortBy, currentSortDir, currentClassId),
-    getClasses()
+    StudentService.getAll(
+      currentPage, 
+      currentSearch, 
+      currentClassId, // Pastikan urutannya benar: classId dulu
+      currentSortBy,  // Baru Sort By
+      currentSortDir
+    ),
+    ClassRoomService.getAll()
   ]);
 
   return (

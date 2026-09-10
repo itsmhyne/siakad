@@ -7,6 +7,7 @@ import {
   getCoreRowModel,
   flexRender,
 } from "@tanstack/react-table";
+import { toast } from "sonner"; // [BARU] Import Toast dari Sonner
 
 // Import Komponen Shadcn
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StudentService } from "@/services/studentServices";
+
+// Import Service API
 
 // Tipe Data
 type Student = {
@@ -49,7 +53,7 @@ type Student = {
 
 type ClassRoom = { id: number; name: string; };
 
-// Komponen Input Modular menggunakan Shadcn Input
+// Komponen Input Modular (Ditaruh di LUAR agar tidak re-render/kursor hilang)
 const InputField = ({ label, type = "text", field, req = false, ph = "", formData, setFormData }: any) => (
   <div className="space-y-1">
     <label className="text-xs font-medium text-muted-foreground">
@@ -74,7 +78,7 @@ export default function DataTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // State Modal
+  // State Modal & Form
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,21 +92,19 @@ export default function DataTable({
   };
   const [formData, setFormData] = useState(initialForm);
 
-  // Kolom Tabel
+  // Kolom Tabel (Hanya untuk Tampilan Desktop)
   const columns: any[] = [
     {
       accessorKey: "nis", header: "NIS",
       cell: (info: any) => <span className="font-mono font-medium">{info.getValue()}</span>,
     },
     { accessorKey: "name", header: "Nama Siswa" },
-    { accessorKey: "gender", header: "Jkel" },
-    { accessorKey: "status", header: "Status" },
     {
       id: "class_name", header: "Kelas",
       cell: (info: any) => info.row.original.class_room ? (
         <span className="font-medium">{info.row.original.class_room.name}</span>
-        ) : <span className="text-muted-foreground text-xs italic">Belum diset</span>,
-      },
+      ) : <span className="text-muted-foreground text-xs italic">Belum diset</span>,
+    },
     {
       accessorKey: "card_uid", header: "UID Kartu",
       cell: (info: any) => info.getValue() ? (
@@ -127,7 +129,7 @@ export default function DataTable({
     getCoreRowModel: getCoreRowModel(), 
   });
 
-  // Filter & Paginasi
+  // Filter & Paginasi URL
   const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -142,8 +144,9 @@ export default function DataTable({
   };
 
   const handleClassFilterChange = (val: string | null) => {
+    const safeVal = val || "all";
     const params = new URLSearchParams(searchParams.toString());
-    if (val && val !== "all") params.set("class_id", val); else params.delete("class_id");
+    if (safeVal && safeVal !== "all") params.set("class_id", safeVal); else params.delete("class_id");
     params.set("page", "1"); router.push(`${pathname}?${params.toString()}`);
   };
 
@@ -175,27 +178,21 @@ export default function DataTable({
     e.preventDefault();
     setIsSubmitting(true);
     
-    const url = modalMode === "add" ? "http://127.0.0.1:8000/api/students" : `http://127.0.0.1:8000/api/students/${formData.id}`;
-    
-    // Siapkan payload, ubah 'none' menjadi kosong untuk validasi Laravel
+    // Hilangkan string kosong & "none" agar tidak dikirim
     const payload = Object.fromEntries(Object.entries(formData).filter(([_, v]) => v !== "" && v !== "none"));
 
     try {
-      const res = await fetch(url, {
-        method: modalMode === "add" ? "POST" : "PUT",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        setIsModalOpen(false);
-        router.refresh();
+      if (modalMode === "add") {
+        await StudentService.create(payload);
+        toast.success("Berhasil!", { description: "Siswa baru telah ditambahkan ke sistem." });
       } else {
-        const errorData = await res.json();
-        alert("Gagal: " + (errorData.message || "Periksa inputan Anda."));
+        await StudentService.update(formData.id, payload);
+        toast.success("Berhasil!", { description: "Data siswa berhasil diperbarui." });
       }
-    } catch (error) {
-      alert("Kesalahan koneksi jaringan.");
+      setIsModalOpen(false);
+      router.refresh();
+    } catch (error: any) {
+      toast.error("Gagal Menyimpan", { description: error.message || "Periksa kembali inputan Anda." });
     } finally {
       setIsSubmitting(false);
     }
@@ -204,10 +201,12 @@ export default function DataTable({
   const handleDelete = async (id: number) => {
     if (!confirm("Yakin ingin menghapus siswa ini?")) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/students/${id}`, { method: "DELETE" });
-      if (res.ok) router.refresh();
-      else alert("Gagal menghapus data.");
-    } catch (error) { alert("Terjadi kesalahan jaringan."); }
+      await StudentService.delete(id);
+      toast.success("Data Dihapus", { description: "Siswa berhasil dihapus dari sistem." });
+      router.refresh();
+    } catch (error: any) {
+      toast.error("Gagal Menghapus", { description: error.message || "Terjadi kesalahan koneksi." });
+    }
   };
 
   const currentClassFilter = searchParams.get("class_id") || "all";
@@ -216,7 +215,7 @@ export default function DataTable({
     <div className="w-full space-y-4">
       {/* FILTER & TOMBOL TAMBAH */}
       <div className="flex flex-col sm:flex-row justify-between gap-3 items-end mb-4">
-        <div className="flex gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Input 
             placeholder="Cari nama atau NIS siswa..." 
             value={searchTerm} 
@@ -224,15 +223,12 @@ export default function DataTable({
             className="w-full sm:w-75" 
           />
           <Select value={currentClassFilter} onValueChange={handleClassFilterChange}>
-            <SelectTrigger className="w-full sm:w-[200px]">
-              
-              {/* [PERBAIKAN] Paksa tampilkan Nama Kelas, bukan angkanya */}
+            <SelectTrigger className="w-full sm:w-50">
               <SelectValue placeholder="Semua Kelas">
                 {currentClassFilter === "all" || !currentClassFilter
                   ? "Semua Kelas"
                   : classes.find(c => c.id.toString() === currentClassFilter)?.name || "Semua Kelas"}
               </SelectValue>
-              
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua Kelas</SelectItem>
@@ -242,13 +238,14 @@ export default function DataTable({
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => openModal("add")}>+ Tambah Siswa</Button>
+        <Button onClick={() => openModal("add")} className="w-full sm:w-auto">
+          + Tambah Siswa
+        </Button>
       </div>
 
-      {/* TABEL MENGGUNAKAN SHADCN UI */}
       {/* 1. TAMPILAN DESKTOP & TABLET (Tersembunyi di HP) */}
-      <div className="hidden md:block rounded-md border overflow-x-auto">
-        <Table className="min-w-[700px]">
+      <div className="hidden md:block rounded-md border overflow-x-auto bg-card">
+        <Table className="min-w-175">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup: any) => (
               <TableRow key={headerGroup.id}>
@@ -271,7 +268,7 @@ export default function DataTable({
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
                   Data tidak ditemukan.
                 </TableCell>
               </TableRow>
@@ -286,7 +283,6 @@ export default function DataTable({
           const student = row.original;
           return (
             <div key={row.id} className="bg-card text-card-foreground border rounded-xl p-4 shadow-sm flex flex-col gap-3">
-              {/* Header Kartu: Nama, NIS, dan Kelas */}
               <div className="flex justify-between items-start gap-2">
                 <div>
                   <h3 className="font-semibold text-base leading-tight">{student.name}</h3>
@@ -301,7 +297,6 @@ export default function DataTable({
                 )}
               </div>
               
-              {/* Footer Kartu: UID RFID & Tombol Aksi */}
               <div className="flex justify-between items-end pt-3 border-t">
                 <div>
                   {student.card_uid ? (
@@ -313,12 +308,8 @@ export default function DataTable({
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => openModal("edit", student)} className="h-8 text-xs">
-                    Edit
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(student.id)} className="h-8 text-xs">
-                    Hapus
-                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => openModal("edit", student)} className="h-8 text-xs">Edit</Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(student.id)} className="h-8 text-xs">Hapus</Button>
                 </div>
               </div>
             </div>
@@ -331,7 +322,7 @@ export default function DataTable({
       </div>
 
       {/* PAGINASI */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pt-2">
         <div className="text-sm text-muted-foreground">
           Halaman <span className="font-medium text-foreground">{currentPage}</span> dari {pageCount}
         </div>
@@ -345,7 +336,7 @@ export default function DataTable({
         </div>
       </div>
 
-      {/* SHADCN DIALOG (MODAL) */}
+      {/* SHADCN DIALOG (MODAL CRUD) */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -357,7 +348,7 @@ export default function DataTable({
 
           <form id="studentForm" onSubmit={handleSubmit} className="space-y-6 py-4">
             {/* Section Identitas & Akademik */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/50 p-4 rounded-lg border">
               <InputField label="NIS" field="nis" req={true} ph="Nomor Induk Siswa" formData={formData} setFormData={setFormData} />
               <InputField label="Nama Lengkap" field="name" req={true} formData={formData} setFormData={setFormData} />
               <InputField label="NISN" field="nisn" formData={formData} setFormData={setFormData} />
@@ -367,7 +358,7 @@ export default function DataTable({
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Kelas</label>
                 <Select value={formData.class_id} onValueChange={(val) => setFormData({...formData, class_id: val || "none"})}>
-                <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="-- Belum ada kelas --">
                       {formData.class_id === "none" || !formData.class_id
                         ? "-- Belum ada kelas --"
@@ -383,15 +374,15 @@ export default function DataTable({
 
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Status Siswa</label>
-                <Select value={formData.status} onValueChange={(val) => setFormData({...formData, status: val || "none"})}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pilih Status">
-                    {formData.status === "active" ? "Aktif" :
-                    formData.status === "graduated" ? "Lulus" :
-                    formData.status === "transferred" ? "Pindah" :
-                    formData.status === "dropped" ? "Dikeluarkan" : "Aktif"}
-                  </SelectValue>
-                </SelectTrigger>
+                <Select value={formData.status} onValueChange={(val) => setFormData({...formData, status: (val as any) || "active"})}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih Status">
+                      {formData.status === "active" ? "Aktif" :
+                       formData.status === "graduated" ? "Lulus" :
+                       formData.status === "transferred" ? "Pindah" :
+                       formData.status === "dropped" ? "Dikeluarkan" : "Aktif"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Aktif</SelectItem>
                     <SelectItem value="graduated">Lulus</SelectItem>
@@ -408,12 +399,12 @@ export default function DataTable({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Jenis Kelamin *</label>
-                <Select value={formData.gender} onValueChange={(val) => setFormData({...formData, gender: val || "none"})}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pilih Jenis Kelamin">
-                    {formData.gender === "P" ? "Perempuan (P)" : "Laki-laki (L)"}
-                  </SelectValue>
-                </SelectTrigger>
+                <Select value={formData.gender} onValueChange={(val) => setFormData({...formData, gender: (val as any) || "L"})}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih Jenis Kelamin">
+                      {formData.gender === "P" ? "Perempuan (P)" : "Laki-laki (L)"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="L">Laki-laki (L)</SelectItem>
                     <SelectItem value="P">Perempuan (P)</SelectItem>
@@ -436,6 +427,7 @@ export default function DataTable({
                   value={formData.address} 
                   onChange={(e) => setFormData({...formData, address: e.target.value})} 
                   rows={2} 
+                  className="resize-none"
                 />
               </div>
 
