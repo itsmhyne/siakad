@@ -38,6 +38,17 @@ import {
 } from "@/components/ui/table";
 import { StudentService } from "@/services/studentServices";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 // Import Service API
 
 // Tipe Data
@@ -82,6 +93,10 @@ export default function DataTable({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // State Modal Hapus
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<number | null>(null);
   
   const initialForm = {
     id: 0, nis: "", nisn: "", nik: "", card_uid: "",
@@ -116,7 +131,7 @@ export default function DataTable({
       cell: (info: any) => (
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => openModal("edit", info.row.original)}>Edit</Button>
-          <Button variant="destructive" size="sm" onClick={() => handleDelete(info.row.original.id)}>Hapus</Button>
+          <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(info.row.original.id)}>Hapus</Button>
         </div>
       ),
     },
@@ -198,14 +213,25 @@ export default function DataTable({
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Yakin ingin menghapus siswa ini?")) return;
+  // Fungsi dipanggil saat tombol hapus diklik
+  const handleDeleteClick = (id: number) => {
+    setStudentToDelete(id);
+    setIsDeleteDialogOpen(true);
+  };
+
+  // Fungsi dipanggil saat konfirmasi "Ya, Hapus" di modal diklik
+  const confirmDelete = async () => {
+    if (!studentToDelete) return;
+    
     try {
-      await StudentService.delete(id);
+      await StudentService.delete(studentToDelete);
       toast.success("Data Dihapus", { description: "Siswa berhasil dihapus dari sistem." });
       router.refresh();
     } catch (error: any) {
       toast.error("Gagal Menghapus", { description: error.message || "Terjadi kesalahan koneksi." });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setStudentToDelete(null);
     }
   };
 
@@ -309,7 +335,7 @@ export default function DataTable({
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" size="sm" onClick={() => openModal("edit", student)} className="h-8 text-xs">Edit</Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(student.id)} className="h-8 text-xs">Hapus</Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(student.id)} className="h-8 text-xs">Hapus</Button>
                 </div>
               </div>
             </div>
@@ -447,6 +473,27 @@ export default function DataTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* SHADCN ALERT DIALOG (MODAL KONFIRMASI HAPUS) */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apakah Anda benar-benar yakin?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tindakan ini tidak dapat dibatalkan. Data siswa ini akan dihapus secara permanen dari server database Anda.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setStudentToDelete(null)}>Batal</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Ya, Hapus Data
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
